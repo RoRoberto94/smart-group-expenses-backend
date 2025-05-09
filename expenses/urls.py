@@ -3,7 +3,9 @@ from .views import (
     RegisterView,
     CustomTokenObtainPairView,
     CustomTokenRefreshView,
-    UserDetailView
+    UserDetailView,
+    GroupListCreateView,
+    GroupDetailView
 )
 
 urlpatterns = [
@@ -14,4 +16,9 @@ urlpatterns = [
     path('auth/refresh/', CustomTokenRefreshView.as_view(), name='token_refresh'),
 
     path('auth/user/', UserDetailView.as_view(), name='auth_user_detail'),
+
+    path('groups/', GroupListCreateView.as_view(), name='group-list-create'),
+
+    path('groups/<int:pk>/', GroupDetailView.as_view(), name='group-detail'),
 ]
+
