@@ -2,7 +2,9 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.utils.translation import gettext_lazy as _
-from .models import Group
+from .models import Group, Expense, ExpenseSplit
+from decimal import Decimal
+from rest_framework.exceptions import ValidationError, PermissionDenied
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -23,6 +25,52 @@ class GroupSerializer(serializers.ModelSerializer):
         group.members.add(user)
 
         return group
+
+class ExpenseSplitSerializer(serializers.ModelSerializer):
+    owed_by = UserSerializer(read_only=True)
+
+    class Meta:
+        model = ExpenseSplit
+
+        fields = ('id', 'owed_by', 'amount')
+
+class ExpenseSerializer(serializers.ModelSerializer):
+    paid_by = UserSerializer(read_only=True)
+    splits = ExpenseSplitSerializer(many=True, read_only=True)
+    
+
+    class Meta:
+        model = Expense
+
+        fields = ('id', 'group', 'description', 'amount', 'paid_by', 'splits', 'created_at')
+        read_only_fields = ('paid_by', 'splits', 'created_at', 'group')
+    
+    def create(self, validated_data):
+        current_user = self.context['request'].user
+
+        if 'group_instance' not in self.context:
+            raise ValidationError({'detail': "Group instance not found in context."})
+        
+        group_instance = self.context['group_instance']
+    
+        if not group_instance.members.filter(id=current_user.id).exists():
+            raise PermissionDenied(_("You are not a member of this group and cannot add expenses to it"))
+        
+        expense = Expense.objects.create(paid_by=current_user, group=group_instance, **validated_data)
+        members = group_instance.members.all()
+        number_of_members = members.count()
+
+        if number_of_members > 0:
+            split_amount_raw = expense.amount / Decimal(number_of_members)
+            split_amount = split_amount_raw.quantize(Decimal('0.01'))
+            splits_to_create = []
+            for member in members:
+                splits_to_create.append(
+                    ExpenseSplit(expense=expense, owed_by=member, amount=split_amount))
+                
+            ExpenseSplit.objects.bulk_create(splits_to_create)
+
+        return expense
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(

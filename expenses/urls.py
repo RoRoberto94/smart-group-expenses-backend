@@ -5,7 +5,8 @@ from .views import (
     CustomTokenRefreshView,
     UserDetailView,
     GroupListCreateView,
-    GroupDetailView
+    GroupDetailView,
+    ExpenseListCreateView
 )
 
 urlpatterns = [
@@ -20,5 +21,7 @@ urlpatterns = [
     path('groups/', GroupListCreateView.as_view(), name='group-list-create'),
 
     path('groups/<int:pk>/', GroupDetailView.as_view(), name='group-detail'),
+
+    path('groups/<int:group_pk>/expenses/', ExpenseListCreateView.as_view(), name='group-expense-list-create'),
 ]
 
