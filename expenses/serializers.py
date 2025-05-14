@@ -72,6 +72,16 @@ class ExpenseSerializer(serializers.ModelSerializer):
 
         return expense
 
+class OptimizedSettlementSerializer(serializers.Serializer):
+    from_user_username = serializers.CharField(source='from_user.username')
+    to_user_username = serializers.CharField(source='to_user.username')
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2)
+
+class SettlementTransactionSerializer(serializers.Serializer):
+    from_user = UserSerializer(source='from_user_obj')
+    to_user = UserSerializer(source='to_user_obj')
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2)
+
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
         write_only=True,

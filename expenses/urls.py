@@ -6,7 +6,8 @@ from .views import (
     UserDetailView,
     GroupListCreateView,
     GroupDetailView,
-    ExpenseListCreateView
+    ExpenseListCreateView,
+    SettleUpView
 )
 
 urlpatterns = [
@@ -23,5 +24,7 @@ urlpatterns = [
     path('groups/<int:pk>/', GroupDetailView.as_view(), name='group-detail'),
 
     path('groups/<int:group_pk>/expenses/', ExpenseListCreateView.as_view(), name='group-expense-list-create'),
+
+    path('groups/<int:group_pk>/settle/', SettleUpView.as_view(), name='group-settle-up'),
 ]
 
