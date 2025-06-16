@@ -160,6 +160,32 @@ class ExpenseListCreateView(generics.ListCreateAPIView):
             raise PermissionDenied(_("You are not a member of this group and cannot add expenses to it."))
         serializer.save()
 
+class ExpenseDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = ExpenseSerializer
+    lookup_url_kwarg = 'expense_pk'
+
+    def get_queryset(self):
+        group_pk = self.kwargs.get('group_pk')
+        group = get_object_or_404(Group, pk=group_pk)
+
+        if not group.members.filter(id=self.request.user.id).exists():
+            raise PermissionDenied(_("You are not a member of this group."))
+        
+        return Expense.objects.filter(group=group)
+    
+    def perform_update(self, serializer):
+        expense_instance = self.get_object()
+        if expense_instance.paid_by != self.request.user:
+            raise PermissionDenied(_("You do not have permission to edit this expense as you did not pay for it."))
+        
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if instance.paid_by != self.request.user:
+            raise PermissionDenied(_("You do not have permission to delete this expense as you did not pay for it."))
+        
+        instance.delete()
+
 class SettleUpView(APIView):
     """
     View for calculating and returning the optimized plan for payments for a specific group!

@@ -43,20 +43,24 @@ class ExpenseSerializer(serializers.ModelSerializer):
         model = Expense
 
         fields = ('id', 'group', 'description', 'amount', 'paid_by', 'splits', 'created_at')
-        read_only_fields = ('paid_by', 'splits', 'created_at', 'group')
+        read_only_fields = ('id', 'paid_by', 'splits', 'created_at', 'group')
     
     def create(self, validated_data):
         current_user = self.context['request'].user
 
         if 'group_instance' not in self.context:
-            raise ValidationError({'detail': "Group instance not found in context."})
-        
-        group_instance = self.context['group_instance']
+            raise ValidationError({'detail': "Group instance (context) is required for creating an expense."})
     
+        group_instance = self.context['group_instance']
+
         if not group_instance.members.filter(id=current_user.id).exists():
             raise PermissionDenied(_("You are not a member of this group and cannot add expenses to it"))
         
-        expense = Expense.objects.create(paid_by=current_user, group=group_instance, **validated_data)
+        expense = Expense.objects.create(paid_by=current_user,
+                                         group=group_instance,
+                                         description=validated_data['description'],
+                                         amount=Decimal(validated_data['amount'])
+                                         )
         members = group_instance.members.all()
         number_of_members = members.count()
 
@@ -71,6 +75,30 @@ class ExpenseSerializer(serializers.ModelSerializer):
             ExpenseSplit.objects.bulk_create(splits_to_create)
 
         return expense
+
+    def update(self, instance, validated_data):
+        old_amount = instance.amount
+        instance.description = validated_data.get('description', instance.description)
+        new_amount_str = validated_data.get('amount', str(instance.amount))
+        instance.amount = Decimal(new_amount_str)
+        instance.save(update_fields=['description', 'amount'])
+
+        if old_amount != instance.amount:
+            instance.splits.all().delete()
+            group_of_expense = instance.group
+            members = group_of_expense.members.all()
+            number_of_members = members.count()
+
+            if number_of_members > 0:
+                split_amount_raw = instance.amount / Decimal(number_of_members)
+                split_amount = split_amount_raw.quantize(Decimal('0.01'))
+
+                splits_to_create = []
+                for member in members:
+                    splits_to_create.append(ExpenseSplit(expense=instance, owed_by=member, amount=split_amount))
+                ExpenseSplit.objects.bulk_create(splits_to_create)
+
+        return instance
 
 class OptimizedSettlementSerializer(serializers.Serializer):
     from_user_username = serializers.CharField(source='from_user.username')
