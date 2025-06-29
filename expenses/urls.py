@@ -8,7 +8,8 @@ from .views import (
     GroupDetailView,
     ExpenseListCreateView,
     SettleUpView,
-    ExpenseDetailView
+    ExpenseDetailView,
+    ManageGroupMembersView
 )
 
 urlpatterns = [
@@ -29,5 +30,7 @@ urlpatterns = [
     path('groups/<int:group_pk>/settle/', SettleUpView.as_view(), name='group-settle-up'),
 
     path('groups/<int:group_pk>/expenses/<int:expense_pk>/', ExpenseDetailView.as_view(), name='expense-detail'),
+
+    path('groups/<int:group_pk>/members/', ManageGroupMembersView.as_view(), name='group-members-manage'),
 ]
 

@@ -15,6 +15,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from .serializers import OptimizedSettlementSerializer
+from .serializers import ManageGroupMemberSerializer
+
 
 def calculate_optimized_settlements(group_id):
     try:
@@ -220,4 +222,50 @@ class SettleUpView(APIView):
         serializer = OptimizedSettlementSerializer(enriched_settlements, many=True)
 
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+class ManageGroupMembersView(APIView):
+    serializer_class = ManageGroupMemberSerializer
+
+    def post(self, request, group_pk=None):
+        group = get_object_or_404(Group, pk=group_pk)
+
+        if group.owner != request.user:
+            raise PermissionDenied(_("Only group owner can add members."))
+        
+        serializer = self.serializer_class(data=request.data)
+        if serializer.is_valid():
+            username_to_add = serializer.validated_data['username']
+            user_to_add = get_object_or_404(User, username=username_to_add)
+
+            if group.members.filter(id=user_to_add.id).exists():
+                raise ValidationError({'detail': _("User is already a member of this group.")})
+            
+            group.members.add(user_to_add)
+            user_serializer = UserSerializer(user_to_add)
+            return Response(
+                {'detail': _("User added successfully."), 'member': user_serializer.data},
+                status=status.HTTP_200_OK 
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+    def delete(self, request, group_pk=None):
+        group = get_object_or_404(Group, pk=group_pk)
+
+        if group.owner != request.user:
+            raise PermissionDenied(_("Only the group owner can remove members."))
+        
+        serializer = self.serializer_class(data=request.data)
+        if serializer.is_valid():
+            username_to_remove = serializer.validated_data['username']
+            user_to_remove = get_object_or_404(User, username=username_to_remove)
+
+            if user_to_remove == group.owner:
+                raise ValidationError({'detail': _("The group owner cannot be removed.")})
+            
+            if not group.members.filter(id=user_to_remove.id).exists():
+                raise ValidationError({'detail': _("User is not a member of this group")})
+            
+            group.members.remove(user_to_remove)
+
+            return Response({'detail': _("User removed successfully.")}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
