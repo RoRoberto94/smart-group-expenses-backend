@@ -99,7 +99,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 class CustomTokenRefreshView(TokenRefreshView):
     pass
 
-class UserDetailView(generics.RetrieveAPIView):
+class UserDetailView(generics.RetrieveUpdateAPIView):
     serializer_class = UserSerializer
 
     def get_object(self):

@@ -11,6 +11,8 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = ('id', 'username', 'email', 'first_name', 'last_name')
 
+        read_only_fields = ('id', 'username', 'email')
+
 class GroupSerializer(serializers.ModelSerializer):
     owner = UserSerializer(read_only=True)
     members = UserSerializer(many=True, read_only=True)
