@@ -149,4 +149,148 @@ class ExpenseAPITests(TestCase):
         self.assertEqual(settlement_data['from_user_username'], self.user2.username)
         self.assertEqual(settlement_data['to_user_username'], self.user1.username)
         self.assertEqual(Decimal(settlement_data['amount']), Decimal('50.00'))
+    
+    def test_update_expense_as_payer(self):
+        expense = Expense.objects.create(
+        group=self.group_user1,
+        description='Initial Dinner',
+        amount=Decimal('100.00'),
+        paid_by=self.user1
+        )
 
+        ExpenseSplit.objects.create(expense=expense, owed_by=self.user1, amount=Decimal('100.00'))
+
+        self.group_user1.members.add(self.user2)
+
+        url = f'/api/groups/{self.group_user1.pk}/expenses/{expense.pk}/'
+        payload = {'description': 'Updated Dinner', 'amount': '120.00'}
+        response = self.client.patch(url, payload, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['description'], payload['description'])
+        self.assertEqual(Decimal(response.data['amount']), Decimal(payload['amount']))
+
+        expense.refresh_from_db()
+    
+        self.assertEqual(expense.splits.count(), 2)
+        for split in expense.splits.all():
+            self.assertEqual(split.amount, Decimal('60.00'))
+
+    def test_update_expense_as_non_payer_fails(self):
+        expense = Expense.objects.create(group=self.group_user1, description='Test Expense', amount=Decimal('50.00'), paid_by=self.user1)
+        self.group_user1.members.add(self.user2)
+
+        response_login = self.client.post('/api/auth/login/', {'username': 'apiuser2', 'password': 'password123'}, format='json')
+        token_user2 = response_login.data['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token_user2}')
+
+        url = f'/api/groups/{self.group_user1.pk}/expenses/{expense.pk}/'
+        payload = {'description': 'Hacked!'}
+        response = self.client.patch(url, payload, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_delete_expense_as_payer(self):
+        expense = Expense.objects.create(group=self.group_user1, description='To be deleted', amount=Decimal('20.00'), paid_by=self.user1)
+        expense_id_to_delete = expense.pk
+
+        url = f'/api/groups/{self.group_user1.pk}/expenses/{expense_id_to_delete}/'
+        response = self.client.delete(url)
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        self.assertFalse(Expense.objects.filter(pk=expense_id_to_delete).exists())
+
+    def test_delete_expense_as_non_payer_fails(self):
+        expense = Expense.objects.create(group=self.group_user1, description='Protected Expense', amount=Decimal('30.00'), paid_by=self.user1)
+        self.group_user1.members.add(self.user2)
+
+        response_login = self.client.post('/api/auth/login/', {'username': 'apiuser2', 'password': 'password123'}, format='json')
+        token_user2 = response_login.data['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token_user2}')
+
+        url = f'/api/groups/{self.group_user1.pk}/expenses/{expense.pk}/'
+        response = self.client.delete(url)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_update_group_name_as_owner(self):
+        url = f'/api/groups/{self.group_user1.pk}/'
+        payload = {'name': 'Updated Group Name'}
+        response = self.client.patch(url, payload, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['name'], payload['name'])
+        self.group_user1.refresh_from_db()
+        self.assertEqual(self.group_user1.name, payload['name'])
+
+    def test_update_group_name_as_non_owner_fails(self):
+        self.group_user1.members.add(self.user2)
+
+        response_login = self.client.post('/api/auth/login/', {'username': 'apiuser2', 'password': 'password123'}, format='json')
+        token_user2 = response_login.data['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token_user2}')
+
+        url = f'/api/groups/{self.group_user1.pk}/'
+        payload = {'name': 'Attempted Update'}
+        response = self.client.patch(url, payload, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_delete_group_as_owner(self):
+        Expense.objects.create(group=self.group_user1, description='Test', amount=Decimal('10.00'), paid_by=self.user1)
+        self.assertEqual(Expense.objects.count(), 1)
+
+        group_id_to_delete = self.group_user1.pk
+        url = f'/api/groups/{group_id_to_delete}/'
+        response = self.client.delete(url)
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        self.assertFalse(Group.objects.filter(pk=group_id_to_delete).exists())
+        self.assertEqual(Expense.objects.count(), 0)
+
+    def test_add_member_as_owner(self):
+        url = f'/api/groups/{self.group_user1.pk}/members/'
+        payload = {'username': self.user2.username}
+        response = self.client.post(url, payload, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['detail'], 'User added successfully.')
+
+        self.assertTrue(self.group_user1.members.filter(pk=self.user2.pk).exists())
+
+    def test_remove_member_as_owner(self):
+        self.group_user1.members.add(self.user2)
+
+        self.assertTrue(self.group_user1.members.filter(pk=self.user2.pk).exists())
+
+        url = f'/api/groups/{self.group_user1.pk}/members/'
+        payload = {'username': self.user2.username}
+        response = self.client.delete(url, data=payload, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['detail'], 'User removed successfully.')
+
+        self.assertFalse(self.group_user1.members.filter(pk=self.user2.pk).exists())
+
+    def test_remove_owner_from_group_fails(self):
+        url = f'/api/groups/{self.group_user1.pk}/members/'
+        payload = {'username': self.user1.username}
+        response = self.client.delete(url, data=payload, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['detail'], 'The group owner cannot be removed.')
+
+    def test_update_user_profile(self):
+        url = '/api/auth/user/'
+        payload = {'first_name': 'ApiUser', 'last_name': 'One'}
+        response = self.client.patch(url, payload, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['first_name'], payload['first_name'])
+        self.assertEqual(response.data['last_name'], payload['last_name'])
+
+        self.user1.refresh_from_db()
+        self.assertEqual(self.user1.first_name, payload['first_name'])
+        self.assertEqual(self.user1.last_name, payload['last_name'])
